@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>好名字 GoodName · 康熙筆畫三才五格 × 紫微數理入盤</title>
+<style>
+:root{--red:#9b2c22;--gold:#c99a3b;--ink:#2b2420;--paper:#fbf6ec;--line:#e6dccb}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Noto Serif TC","Microsoft JhengHei","PingFang TC",serif;background:var(--paper);color:var(--ink)}
+header{background:linear-gradient(135deg,#7b1f17,#a33a24);color:#fff;padding:22px 20px 16px;text-align:center}
+header h1{margin:0;font-size:30px;letter-spacing:4px}
+header p{margin:6px 0 0;opacity:.85;font-size:14px}
+nav{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;background:#fff;border-bottom:1px solid var(--line);padding:8px;position:sticky;top:0;z-index:5}
+nav button{border:1px solid var(--line);background:#fff;padding:8px 14px;border-radius:20px;font:inherit;font-size:15px;cursor:pointer}
+nav button.on{background:var(--red);color:#fff;border-color:var(--red)}
+main{max-width:1100px;margin:0 auto;padding:16px}
+section{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+input[type=text],input[type=number]{font:inherit;font-size:17px;padding:8px 10px;border:1px solid #cbbfa9;border-radius:8px}
+.btn{font:inherit;font-size:16px;padding:8px 18px;border-radius:8px;border:1px solid var(--red);background:var(--red);color:#fff;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--red)}
+.chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:16px;padding:4px 10px;margin:3px;cursor:pointer}
+.tbl{border-collapse:collapse;width:100%;margin:8px 0;font-size:15px}
+.tbl th{background:#f3eadb;font-weight:700}
+.tbl th,.tbl td{border:1px solid var(--line);padding:6px 8px;text-align:center}
+.tbl td.l{text-align:left}
+tr.pick{cursor:pointer}tr.pick:hover,tr.sel{background:#fff3d6}
+.ji{color:#c0392b;font-weight:700}.banji{color:#d68910;font-weight:700}.xiong{color:#34495e;font-weight:700}
+.lu{color:#1e8449;font-weight:700}
+.warn{color:#c0392b;font-weight:700;margin-top:4px}.good{color:#1e8449;font-weight:700;margin-top:4px}
+.sub{color:#777;font-size:13px}
+.score{float:right;text-align:center;border:2px solid var(--gold);border-radius:12px;padding:6px 16px}
+.score b{display:block;font-size:42px;color:var(--red)}
+.chars{display:flex;gap:10px;flex-wrap:wrap}
+.ch{border:1px solid var(--line);border-radius:10px;padding:8px 14px;text-align:center;min-width:90px}
+.ch .big{font-size:36px;color:var(--red)}
+.big2{font-size:22px}
+.zw{border-left:4px solid var(--gold);padding:6px 10px;margin:8px 0;background:#fffaf0}
+h3{color:var(--red);margin:16px 0 6px}
+.out{margin-top:12px}
+#loading{text-align:center;padding:30px;color:#888}
+footer{text-align:center;color:#888;font-size:13px;padding:20px}
+@media(max-width:640px){header h1{font-size:24px}.score{float:none}}
+</style>
+</head>
+<body>
+<header><h1>好名字 GoodName</h1><p>康熙筆畫 → 三才五格 → 81數理 → 人格／總格入紫微命盤　數理定吉凶，命盤決成敗</p></header>
+<nav>
+<button class="on" data-t="t-analyze">① 姓名分析</button><button data-t="t-suggest">② 智能起名</button><button data-t="t-compare">③ 名字比較</button>
+<button data-t="t-chart">④ 我的紫微命盤</button><button data-t="t-stroke">⑤ 康熙筆畫查詢</button><button data-t="t-81">⑥ 81數理表</button><button data-t="t-help">⑦ 四化對照／說明</button>
+</nav>
+<main>
+<div id="loading">載入康熙筆畫字庫中…</div>
+<p class="sub" id="chart-tip"></p>
+<section id="t-analyze">
+  <div class="row"><b>全名</b><input id="a-name" type="text" value="陳曉旭" size="10">
+  <span>自訂筆畫（選填，如 陳=16）</span><input id="a-ov" type="text" size="16">
+  <button class="btn" id="a-go">分析</button><button class="btn ghost" id="a-save">下載報告</button></div>
+  <div id="a-out" class="out"></div>
+</section>
+<section id="t-suggest" hidden>
+  <div class="row"><b>姓氏</b><input id="s-sur" type="text" value="林" size="4">
+  <b>性別</b><label><input type="radio" name="gender" value="M">男</label><label><input type="radio" name="gender" value="F">女</label><label><input type="radio" name="gender" value="N" checked>不限</label>
+  <b>字數</b><label><input type="radio" name="len" value="2" checked>雙名</label><label><input type="radio" name="len" value="1">單名</label>
+  <b>數量</b><input id="s-n" type="number" value="10" min="5" max="50" style="width:70px"></div>
+  <div class="row"><b>喜用五行（字形）</b><label class="chip"><input type="checkbox" name="wx" value="金">金</label><label class="chip"><input type="checkbox" name="wx" value="木">木</label><label class="chip"><input type="checkbox" name="wx" value="水">水</label><label class="chip"><input type="checkbox" name="wx" value="火">火</label><label class="chip"><input type="checkbox" name="wx" value="土">土</label>
+  <b>指定字（輩分字）</b><input id="s-fixed" type="text" size="2"><label><input type="radio" name="fixpos" value="0" checked>第一字</label><label><input type="radio" name="fixpos" value="1">第二字</label></div>
+  <div class="row"><button class="btn" id="s-go">生成好名字</button><button class="btn ghost" id="s-new">換一批</button><button class="btn ghost" id="s-save">匯出名單</button></div>
+  <p class="sub" id="s-info"></p><div id="s-list"></div><div id="s-out" class="out"></div>
+</section>
+<section id="t-compare" hidden>
+  <div class="row"><b>多個名字（空格或逗號分隔）</b><input id="c-in" type="text" value="陳曉旭 王大陸 劉德華" size="36"><button class="btn" id="c-go">比較</button></div>
+  <div id="c-out"></div>
+</section>
+<section id="t-chart" hidden>
+  <p>打開你自己的紫微斗數命盤，勾選以下兩項（自動保存在本瀏覽器）：</p>
+  <h3>A. 本命化忌星／灾宮內不想再化忌的星 → 名字避開令它們化忌的尾數</h3><div id="avoid-box"></div>
+  <h3>B. 想加強的星（灾宮／重點宮位主星）→ 優先選令它化祿的尾數</h3><div id="want-box"></div>
+  <p><button class="btn ghost" id="clear-chart">清除全部勾選</button></p>
+  <ul class="sub">
+  <li>人格＝姓名的命宮（一生、前半生）；總格＝姓名的身宮（36歲後、後運）。</li>
+  <li>取人格、總格的個位數：1甲 2乙 3丙 4丁 5戊 6己 7庚 8辛 9壬 0癸，再看該天干的四化。</li>
+  <li>本命化忌的星，名字不可再帶令它化忌的數字（忌上加忌，一生有隱形天花板）。例：太陽忌→避1；太陰忌→避2；廉貞忌→避3；巨門忌→避4；天機忌→避5；文曲忌→避6；天同忌→避7；文昌忌→避8；武曲忌→避9；貪狼忌→避0。</li>
+  <li>化解灾宮三步：①找出灾宮 ②找出能化解它的天干（不讓它化忌、讓它化祿） ③把天干對應到五格數字，配出吉利的五格與三才。</li>
+  <li>看宮位要連對宮一起看；化忌若與地空地劫、擎羊陀羅、火星鈴星同宮，問題更明顯。</li></ul>
+</section>
+<section id="t-stroke" hidden>
+  <div class="row"><b>輸入字（簡繁皆可）</b><input id="k-in" type="text" size="24"><button class="btn" id="k-go">查詢</button></div>
+  <div id="k-out"></div>
+  <p class="sub">康熙筆畫以繁體字形、部首還原原字計算（氵=水4、扌=手4、艹=艸6、阝左=阜8、阝右=邑7、忄=心4、王旁=玉5、礻=示5、衤=衣6、月(肉)=6、辶=辵7）；數字一至十按數值計。</p>
+</section>
+<section id="t-81" hidden><table class="tbl" id="t81"></table></section>
+<section id="t-help" hidden>
+  <h3>好名字 = 數理 ＋ 五行 ＋ 八字 ＋ 音形意</h3>
+  <ul>
+  <li><b>天格</b>：單姓＝姓氏筆畫＋1；複姓＝姓氏筆畫相加（祖上遺傳，不可改變）</li>
+  <li><b>人格</b>：姓氏（最後一字）＋名字第一字（姓名核心，影響一生 → 姓名命宮）</li>
+  <li><b>地格</b>：名字筆畫相加；單名＝名字筆畫＋1（基礎運，前半生）</li>
+  <li><b>外格</b>：總格－人格＋1（社交運）；單姓單名外格為 2</li>
+  <li><b>總格</b>：全部筆畫相加，不用加 1（總運，後半生 → 姓名身宮）</li>
+  <li>例：陳16 曉16 旭6 → 天格17 人格32 地格22 外格7 總格38</li></ul>
+  <h3>數字五行與生剋</h3><p>尾數 1、2 木　3、4 火　5、6 土　7、8 金　9、0 水<br>相生：金生水、水生木、木生火、火生土、土生金　相剋：金剋木、木剋土、土剋水、水剋火、火剋金<br>三才：天格→人格看成功運；人格→地格看基礎運。</p>
+  <h3>數理入盤：尾數 → 天干 → 四化</h3><table class="tbl" id="sihua-tbl"></table>
+  <h3>起名三步驟</h3><ol><li>找出命盤中的灾宮（病因）</li><li>找出化解灾宮的天干：不讓它化忌，並讓它化祿</li><li>把天干對應到五格數字，配出人格、總格皆吉、三才良好的筆畫組合，再依音形意選字</li></ol>
+  <p class="sub">選字：避開生僻字、多音字、不雅諧音；字義美好。綜合分：人格、總格權重最高，其次地格、外格、天格，加上三才；令本命化忌星再化忌大幅扣分，令想加強的星化祿加分。僅供參考。</p>
+</section>
+</main>
+<footer>GoodName 網頁版 · 與 Windows 版 GoodName.exe 同一套算法 · 結果僅供參考</footer>
+<script src="app.js"></script>
+</body>
+</html>
