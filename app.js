@@ -23,10 +23,12 @@ function sancai(t,r,d){
 function sihua(n){ const tg=T.TIANGAN[n%10]; const [lu,quan,ke,ji]=T.SIHUA[tg]; return {num:n,tg,祿:lu,權:quan,科:ke,忌:ji}; }
 function jiDigits(star){ return Object.keys(T.TIANGAN).map(Number).filter(d=>T.SIHUA[T.TIANGAN[d]][3]===star); }
 function luDigits(star){ return Object.keys(T.TIANGAN).map(Number).filter(d=>T.SIHUA[T.TIANGAN[d]][0]===star); }
-function charInfo(c, ov){
+function charInfo(c, ov, sur){ // sur=true：姓氏位置，兩種寫法的字預設用本字
   const rec=DB[c];
   if(!rec) return {c,t:c,s:ov||null,py:"",rad:null,wx:"",alt:null};
-  const [t,s,rad,py,alt]=rec; return {c,t,s:ov||s,py,rad,wx:RAD_WX[rad]||"",alt:(!ov&&alt)?alt:null}; // alt：本字也是繁體字，筆畫不同
+  let [t,s,rad,py,alt]=rec; alt=(!ov&&alt)?alt:null; let surSelf=false; // alt：本字也是繁體字，筆畫不同
+  if(sur&&alt){ [t,s,alt,surSelf]=[alt[0],alt[1],[t,s],true]; }
+  return {c,t,s:ov||s,py,rad,wx:RAD_WX[rad]||"",alt,surSelf};
 }
 function splitName(full){
   full=full.replace(/\s/g,"");
@@ -43,7 +45,7 @@ function calcWuge(a,g){
 function analyze(full, ov={}, avoid=[], want=[]){
   const [sur,given]=splitName(full);
   if(!sur||!given) throw new Error("請輸入完整姓名（姓＋名）");
-  const chars=[...(sur+given)].map(c=>charInfo(c,ov[c]));
+  const chars=[...[...sur].map(c=>charInfo(c,ov[c],true)),...[...given].map(c=>charInfo(c,ov[c]))];
   for(const ci of chars) if(!ci.s) throw new Error(`找不到「${ci.c}」的康熙筆畫，請在「自訂筆畫」填寫，例如 ${ci.c}=10`);
   const ns=[...sur].length;
   const ge=calcWuge(chars.slice(0,ns).map(c=>c.s), chars.slice(ns).map(c=>c.s));
@@ -61,7 +63,7 @@ function analyze(full, ov={}, avoid=[], want=[]){
   const total=Math.max(0,Math.min(100,Math.round(50+score*50/27)));
   return {full, sur, given, chars, grids, sancai:sc, ziwei:zw, score:total};
 }
-const altNote=c=>`※ 「${c.c}」有兩種寫法：按「${c.t}」計 ${c.s} 畫（目前採用）；如證件寫「${c.alt[0]}」本字，康熙為 ${c.alt[1]} 畫，可在自訂筆畫填 ${c.c}=${c.alt[1]}`;
+const altNote=c=>c.surSelf?`※ 姓氏「${c.c}」按本字計 ${c.s} 畫（目前採用）；如證件寫「${c.alt[0]}」，康熙為 ${c.alt[1]} 畫，可在自訂筆畫填 ${c.c}=${c.alt[1]}`:`※ 「${c.c}」有兩種寫法：按「${c.t}」計 ${c.s} 畫（目前採用）；如證件寫「${c.alt[0]}」本字，康熙為 ${c.alt[1]} 畫，可在自訂筆畫填 ${c.c}=${c.alt[1]}`;
 function reportText(r){
   const L=[];
   L.push(`【姓名分析】${r.full}   綜合分：${r.score} / 100`,"","一、康熙筆畫（繁體字形計算）");
@@ -112,8 +114,8 @@ function charsByStroke(gender){
 // 嚴格條件不夠數時，以放寬條件（三才半吉）補足並標 relaxed
 function suggest(surname, {n=10,nGiven=2,gender="N",avoid=[],want=[],preferWx=[],seed=1,fixed=null,fixedPos=0,exclude=[]}={}){
   surname=surname.trim(); const sur=[];
-  for(const c of surname){ const ci=charInfo(c); if(!ci.s) throw new Error(`找不到姓氏「${c}」的筆畫`); sur.push(ci.s); }
-  const surT=[...surname].map(trad).join(""), fixedT=fixed?trad(fixed):null;
+  for(const c of surname){ const ci=charInfo(c,undefined,true); if(!ci.s) throw new Error(`找不到姓氏「${c}」的筆畫`); sur.push(ci.s); }
+  const surT=[...surname].map(c=>{const t=charInfo(c,undefined,true).t; return TRAD_FIX[t]||t;}).join(""), fixedT=fixed?trad(fixed):null;
   const rnd=mulberry(seed); const idx=charsByStroke(gender);
   const strict=patterns(sur,nGiven,avoid,want), sk=new Set(strict.map(p=>p.g.join("-")));
   const relaxed=patterns(sur,nGiven,avoid,want,0).filter(p=>!sk.has(p.g.join("-")));
@@ -157,7 +159,7 @@ function suggest(surname, {n=10,nGiven=2,gender="N",avoid=[],want=[],preferWx=[]
 }
 function suggestNote(surname,nGiven,gender,avoid,want,got,n){
   if(got>=n) return "";
-  const ss=[...surname.trim()].map(c=>charInfo(c).s);
+  const ss=[...surname.trim()].map(c=>charInfo(c,undefined,true).s);
   const pats=patterns(ss,nGiven,avoid,want,0); const idx=charsByStroke(gender);
   if(nGiven===1){
     const parts=pats.map(p=>`${p.g[0]}畫（字庫有 ${(idx[p.g[0]]||[]).length} 字）`);
