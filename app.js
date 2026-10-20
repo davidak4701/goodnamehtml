@@ -80,7 +80,7 @@ function reportText(r){
 // ---------- 起名 ----------
 function mulberry(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function shuffle(a,rnd){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
-function patterns(sur, nGiven, avoid, want){
+function patterns(sur, nGiven, avoid, want, minSancai=2){
   const bad=new Set(avoid.flatMap(jiDigits)), good=new Set(want.flatMap(luDigits)); const out=[];
   const list = nGiven===1 ? Array.from({length:25},(_,i)=>[i+2]) : [].concat(...Array.from({length:25},(_,i)=>Array.from({length:25},(_,j)=>[i+2,j+2])));
   for(const g of list){
@@ -88,49 +88,81 @@ function patterns(sur, nGiven, avoid, want){
     if(shuli(ge.人格)[0]!=="吉"||shuli(ge.總格)[0]!=="吉") continue;
     if(!["吉","半吉"].includes(shuli(ge.地格)[0])||(nGiven>=2&&!["吉","半吉"].includes(shuli(ge.外格)[0]))) continue; // 單名外格固定為2
     if(bad.has(ge.人格%10)||bad.has(ge.總格%10)) continue;
-    const sc=sancai(ge.天格,ge.人格,ge.地格); if(sc.score<2) continue;
+    const sc=sancai(ge.天格,ge.人格,ge.地格); if(sc.score<minSancai) continue;
     let s=sc.score*2+jxScore(ge.地格)+jxScore(ge.外格);
     for(const k of ["人格","總格"]) if(good.has(ge[k]%10)) s+=4;
     out.push({s,g,ge});
   }
   return out.sort((a,b)=>b.s-a.s);
 }
-function suggest(surname, {n=10,nGiven=2,gender="N",avoid=[],want=[],preferWx=[],seed=1,fixed=null,fixedPos=0}={}){
-  surname=surname.trim(); const sur=[];
-  for(const c of surname){ const ci=charInfo(c); if(!ci.s) throw new Error(`找不到姓氏「${c}」的筆畫`); sur.push(ci.s); }
-  const rnd=mulberry(seed); const idx={};
+const TRAD_FIX={"峯":"峰","嫺":"嫻"}; // 港澳常用寫法，筆畫相同
+const MEAN_FIX={...TRAD_FIX,"爲":"為","採":"采","裏":"里","衆":"眾","啓":"啟"};
+const trad=c=>{ const t=DB[c]?DB[c][0]:c; return TRAD_FIX[t]||t; };
+const tradText=s=>[...s].map(c=>{ const t=DB[c]?DB[c][0]:c; return MEAN_FIX[t]||t; }).join("");
+function charsByStroke(gender){
+  const idx={};
   for(const [c,info] of Object.entries(NAME_CHARS)){
     if((gender==="M"||gender==="F") && !(info.g===gender||info.g==="N")) continue;
     const rec=DB[c]; if(!rec) continue; (idx[rec[1]]=idx[rec[1]]||[]).push(c);
   }
-  const pats=patterns(sur,nGiven,avoid,want); const results=[]; const used=new Set(); const usedC={};
-  for(const p of pats){
-    const lists=p.g.map((s,pos)=>{
-      if(fixed && fixedPos===pos) return charInfo(fixed).s===s?[fixed]:[];
-      return shuffle([...(idx[s]||[])],rnd);
-    });
-    if(lists.some(l=>!l.length)) continue;
-    let tries=0, found=null;
-    const combos = nGiven===1 ? lists[0].map(a=>[a]) : lists[0].flatMap(a=>lists[1].map(b=>[a,b]));
-    for(const combo of combos){
-      if(++tries>40) break;
-      if(new Set(combo).size<combo.length) continue;
-      if(combo.some(c=>c!==fixed && (usedC[c]||0)>=2)) continue;
-      const name=surname+combo.join(""); if(used.has(name)) continue;
-      found=combo; break;
+  return idx;
+}
+// 名字以繁體顯示；同一批每字只用一次（指定字除外）；雙名同筆畫組合最多2個；exclude＝換一批時已出過的名字；
+// 嚴格條件不夠數時，以放寬條件（三才半吉）補足並標 relaxed
+function suggest(surname, {n=10,nGiven=2,gender="N",avoid=[],want=[],preferWx=[],seed=1,fixed=null,fixedPos=0,exclude=[]}={}){
+  surname=surname.trim(); const sur=[];
+  for(const c of surname){ const ci=charInfo(c); if(!ci.s) throw new Error(`找不到姓氏「${c}」的筆畫`); sur.push(ci.s); }
+  const surT=[...surname].map(trad).join(""), fixedT=fixed?trad(fixed):null;
+  const rnd=mulberry(seed); const idx=charsByStroke(gender);
+  const strict=patterns(sur,nGiven,avoid,want), sk=new Set(strict.map(p=>p.g.join("-")));
+  const relaxed=patterns(sur,nGiven,avoid,want,0).filter(p=>!sk.has(p.g.join("-")));
+  const cap=nGiven>=2?2:n; const out=[]; const seen=new Set([...exclude].map(x=>[...x].map(trad).join(""))); const usedC=new Set(); const perPat={};
+  for(const [tier,pats] of [[false,strict],[true,relaxed]]){
+    if(out.length>=n) break;
+    const cands=[];
+    for(const p of pats){
+      const lists=p.g.map((s,pos)=>{
+        if(fixed && fixedPos===pos) return charInfo(fixed).s===s?[fixed]:[];
+        return shuffle([...(idx[s]||[])],rnd);
+      });
+      if(lists.some(l=>!l.length)) continue;
+      const combos = nGiven===1 ? lists[0].map(a=>[a]) : lists[0].flatMap(a=>lists[1].map(b=>[a,b]));
+      let tries=0, got=0;
+      for(const combo of combos){
+        if(++tries>200||got>=(nGiven===1?n:6)) break;
+        const tc=combo.map(trad);
+        if(new Set(tc).size<tc.length) continue;
+        const gs=new Set(combo.filter(c=>c!==fixed).map(c=>(NAME_CHARS[c]||{}).g||"N"));
+        if(gender==="N" && gs.has("M") && gs.has("F")) continue; // 不限性別時不混搭男女字
+        const name=surT+tc.join(""); if(seen.has(name)) continue;
+        const r=analyze(name,{},avoid,want);
+        const bonus=combo.filter(c=>{ const w=RAD_WX[DB[c][2]]; return w && preferWx.includes(w); }).length;
+        r.rank=r.score+bonus*3; r.meaning=combo.map(c=>`${trad(c)}：${tradText((NAME_CHARS[c]||{}).m||"")}`).join("；");
+        r.relaxed=tier; r._g=p.g.join("-"); r._tc=tc.filter(t=>t!==fixedT);
+        cands.push(r); seen.add(name); got++;
+      }
+      if(cands.length>=n*10) break;
     }
-    if(!found) continue;
-    const name=surname+found.join("");
-    const r=analyze(name,{},avoid,want);
-    const bonus=found.filter(c=>{ const w=RAD_WX[DB[c][2]]; return w && preferWx.includes(w); }).length;
-    r.rank=r.score+bonus*3; r.meaning=found.map(c=>`${c}：${(NAME_CHARS[c]||{}).m||""}`).join("；");
-    results.push(r); used.add(name); for(const c of found) usedC[c]=(usedC[c]||0)+1;
-    if(results.length>=n*4) break;
+    shuffle(cands,rnd); cands.sort((a,b)=>b.rank-a.rank);
+    for(const r of cands){
+      if(out.length>=n) break;
+      if(r._tc.some(t=>usedC.has(t))) continue;
+      if((perPat[r._g]||0)>=cap) continue;
+      perPat[r._g]=(perPat[r._g]||0)+1; r._tc.forEach(t=>usedC.add(t));
+      delete r._g; delete r._tc; out.push(r);
+    }
   }
-  shuffle(results,rnd); results.sort((a,b)=>b.rank-a.rank);
-  const out=[]; const cnt={};
-  for(const r of results){ const key=r.chars.slice([...surname].length).map(c=>c.s).join("-"); if((cnt[key]||0)>=2) continue; cnt[key]=(cnt[key]||0)+1; out.push(r); if(out.length>=n) break; }
-  return {out, pats};
+  return {out, pats:strict};
+}
+function suggestNote(surname,nGiven,gender,avoid,want,got,n){
+  if(got>=n) return "";
+  const ss=[...surname.trim()].map(c=>charInfo(c).s);
+  const pats=patterns(ss,nGiven,avoid,want,0); const idx=charsByStroke(gender);
+  if(nGiven===1){
+    const parts=pats.map(p=>`${p.g[0]}畫（字庫有 ${(idx[p.g[0]]||[]).length} 字）`);
+    return `只找到 ${got} 個（要求 ${n} 個）。單名在「人格、總格皆吉＋三才不凶」下，合格筆畫只有：${parts.join("、")||"沒有"}。每個字一批只用一次，所以名字數受字庫限制。`;
+  }
+  return `只找到 ${got} 個（要求 ${n} 個）。合格筆畫組合 ${pats.length} 組；可能是已出過的名字被排除、指定字或化忌星條件太嚴。按「生成好名字」可重新開始。`;
 }
 
 // ---------- UI ----------
@@ -150,21 +182,23 @@ function reportHTML(r){
   return h;
 }
 function download(name, text){ const a=document.createElement("a"); a.href=URL.createObjectURL(new Blob(["\ufeff"+text],{type:"text/plain;charset=utf-8"})); a.download=name; a.click(); }
-let lastA=null, lastS=[], seed=1;
+let lastA=null, lastS=[], seed=1, hist=new Set();
 function doAnalyze(){
   try{ lastA=analyze($("#a-name").value, parseOv($("#a-ov").value), getStars("avoid"), getStars("want")); $("#a-out").innerHTML=reportHTML(lastA); }
   catch(e){ $("#a-out").innerHTML=`<p class="xiong">${esc(e.message)}</p>`; }
 }
 function doSuggest(newBatch){
-  if(newBatch) seed=Math.floor(Math.random()*1e6)+2;
+  if(newBatch){ seed=Math.floor(Math.random()*1e6)+2; lastS.forEach(r=>hist.add(r.full)); } else hist=new Set();
   try{
     const nGiven=+document.querySelector("input[name=len]:checked").value;
     const {out,pats}=suggest($("#s-sur").value,{n:+$("#s-n").value||10,nGiven,gender:document.querySelector("input[name=gender]:checked").value,
       avoid:getStars("avoid"),want:getStars("want"),preferWx:[...document.querySelectorAll("input[name=wx]:checked")].map(i=>i.value),
-      seed,fixed:[...$("#s-fixed").value.trim()][0]||null,fixedPos:nGiven===1?0:+document.querySelector("input[name=fixpos]:checked").value});
+      seed,fixed:[...$("#s-fixed").value.trim()][0]||null,fixedPos:nGiven===1?0:+document.querySelector("input[name=fixpos]:checked").value,exclude:hist});
     lastS=out;
-    $("#s-info").textContent=`符合「人格、總格皆吉＋三才吉＋避開化忌星」的筆畫組合共 ${pats.length} 組，已挑出 ${out.length} 個名字。點名字看完整分析。`;
-    $("#s-list").innerHTML=out.length?`<table class="tbl"><tr><th>名字</th><th>繁體</th><th>筆畫</th><th>人格</th><th>總格</th><th>三才</th><th>化忌</th><th>分數</th><th>寓意</th></tr>`+out.map((r,i)=>{const g=r.grids;return `<tr class="pick" data-i="${i}"><td><b>${r.full}</b></td><td>${r.chars.map(c=>c.t).join("")}</td><td>${r.chars.map(c=>c.s).join("-")}</td><td class="${jxCls(g.人格.jx)}">${g.人格.num}${g.人格.jx}</td><td class="${jxCls(g.總格.jx)}">${g.總格.num}${g.總格.jx}</td><td>${r.sancai.wx} ${r.sancai.level}</td><td>${g.人格.sihua.忌}/${g.總格.sihua.忌}</td><td><b>${r.score}</b></td><td class="l">${r.meaning}</td></tr>`;}).join("")+`</table>`:`<p>目前條件下找不到合適名字，可放寬性別、取消指定字或少勾一些化忌星。</p>`;
+    const nWant=+$("#s-n").value||10, nr=out.filter(r=>r.relaxed).length;
+    const note=suggestNote($("#s-sur").value,nGiven,document.querySelector("input[name=gender]:checked").value,getStars("avoid"),getStars("want"),out.length,nWant);
+    $("#s-info").textContent=`符合「人格、總格皆吉＋三才吉＋避開化忌星」的筆畫組合共 ${pats.length} 組，已挑出 ${out.length} 個名字`+(nr?`（其中 ${nr} 個用放寬條件：三才半吉，已標示）`:"")+(hist.size?`；已排除之前出過的 ${hist.size} 個`:"")+`。${note} 點名字看完整分析。`;
+    $("#s-list").innerHTML=out.length?`<table class="tbl"><tr><th>名字</th><th>拼音</th><th>筆畫</th><th>人格</th><th>總格</th><th>三才</th><th>化忌</th><th>分數</th><th>寓意</th></tr>`+out.map((r,i)=>{const g=r.grids;return `<tr class="pick" data-i="${i}"><td><b>${r.full}</b></td><td>${r.chars.map(c=>c.py).join(" ")}</td><td>${r.chars.map(c=>c.s).join("-")}</td><td class="${jxCls(g.人格.jx)}">${g.人格.num}${g.人格.jx}</td><td class="${jxCls(g.總格.jx)}">${g.總格.num}${g.總格.jx}</td><td>${r.sancai.wx} ${r.sancai.level}${r.relaxed?'<span class="banji">（放寬）</span>':""}</td><td>${g.人格.sihua.忌}/${g.總格.sihua.忌}</td><td><b>${r.score}</b></td><td class="l">${r.meaning}</td></tr>`;}).join("")+`</table>`:`<p>${esc(note||"目前條件下找不到合適名字。")} 可改雙名、放寬性別、取消指定字或少勾一些化忌星。</p>`;
     document.querySelectorAll("tr.pick").forEach(tr=>tr.onclick=()=>{ document.querySelectorAll("tr.pick").forEach(x=>x.classList.remove("sel")); tr.classList.add("sel"); $("#s-out").innerHTML=reportHTML(lastS[+tr.dataset.i]); });
     if(out.length){ document.querySelector("tr.pick").click(); }
   }catch(e){ $("#s-list").innerHTML=`<p class="xiong">${esc(e.message)}</p>`; }
