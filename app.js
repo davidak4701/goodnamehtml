@@ -25,8 +25,8 @@ function jiDigits(star){ return Object.keys(T.TIANGAN).map(Number).filter(d=>T.S
 function luDigits(star){ return Object.keys(T.TIANGAN).map(Number).filter(d=>T.SIHUA[T.TIANGAN[d]][0]===star); }
 function charInfo(c, ov){
   const rec=DB[c];
-  if(!rec) return {c,t:c,s:ov||null,py:"",rad:null,wx:""};
-  const [t,s,rad,py]=rec; return {c,t,s:ov||s,py,rad,wx:RAD_WX[rad]||""};
+  if(!rec) return {c,t:c,s:ov||null,py:"",rad:null,wx:"",alt:null};
+  const [t,s,rad,py,alt]=rec; return {c,t,s:ov||s,py,rad,wx:RAD_WX[rad]||"",alt:(!ov&&alt)?alt:null}; // alt：本字也是繁體字，筆畫不同
 }
 function splitName(full){
   full=full.replace(/\s/g,"");
@@ -61,10 +61,11 @@ function analyze(full, ov={}, avoid=[], want=[]){
   const total=Math.max(0,Math.min(100,Math.round(50+score*50/27)));
   return {full, sur, given, chars, grids, sancai:sc, ziwei:zw, score:total};
 }
+const altNote=c=>`※ 「${c.c}」有兩種寫法：按「${c.t}」計 ${c.s} 畫（目前採用）；如證件寫「${c.alt[0]}」本字，康熙為 ${c.alt[1]} 畫，可在自訂筆畫填 ${c.c}=${c.alt[1]}`;
 function reportText(r){
   const L=[];
   L.push(`【姓名分析】${r.full}   綜合分：${r.score} / 100`,"","一、康熙筆畫（繁體字形計算）");
-  for(const c of r.chars) L.push(`  ${c.c}（${c.t}）${c.py}  ${c.s} 畫${c.wx?"  字形五行:"+c.wx:""}`);
+  for(const c of r.chars){ L.push(`  ${c.c}（${c.t}）${c.py}  ${c.s} 畫${c.wx?"  字形五行:"+c.wx:""}`); if(c.alt) L.push("     "+altNote(c)); }
   L.push("","二、五格數理（數理定吉凶）");
   for(const k of GRIDS){ const g=r.grids[k]; L.push(`  ${k} ${String(g.num).padStart(2)}（${g.wx}）${g.jx} ─ ${g.title}：${g.desc}`); }
   L.push("",`三、三才配置：${r.sancai.wx}（天人地）→ ${r.sancai.level}`);
@@ -174,7 +175,7 @@ function saveChart(){ localStorage.setItem("gn_chart", JSON.stringify({a:getStar
 function parseOv(s){ const o={}; s.replace(/，/g,",").replace(/＝/g,"=").split(",").forEach(p=>{ const [k,v]=p.split("="); if(k&&v&&/^\d+$/.test(v.trim())) o[[...k.trim()][0]]=+v.trim(); }); return o; }
 function reportHTML(r){
   let h=`<div class="score"><b>${r.score}</b><span>綜合分 / 100</span></div>`;
-  h+=`<h3>一、康熙筆畫</h3><div class="chars">`+r.chars.map(c=>`<div class="ch"><div class="big">${esc(c.t)}</div><div>${esc(c.c)} · ${esc(c.py)}</div><div><b>${c.s}</b> 畫${c.wx?" · "+c.wx:""}</div></div>`).join("")+`</div>`;
+  h+=`<h3>一、康熙筆畫</h3><div class="chars">`+r.chars.map(c=>`<div class="ch"><div class="big">${esc(c.t)}</div><div>${esc(c.c)} · ${esc(c.py)}</div><div><b>${c.s}</b> 畫${c.wx?" · "+c.wx:""}</div></div>`).join("")+`</div>`+r.chars.filter(c=>c.alt).map(c=>`<p class="warn">${esc(altNote(c))}</p>`).join("");
   h+=`<h3>二、五格數理</h3><table class="tbl"><tr><th>格</th><th>數</th><th>五行</th><th>吉凶</th><th>暗示</th></tr>`+GRIDS.map(k=>{const g=r.grids[k];return `<tr><td>${k}</td><td>${g.num}</td><td>${g.wx}</td><td class="${jxCls(g.jx)}">${g.jx}</td><td class="l">${g.title}：${g.desc}</td></tr>`;}).join("")+`</table>`;
   h+=`<h3>三、三才配置：${r.sancai.wx} → <span class="${r.sancai.level.includes("吉")&&r.sancai.level!=="半吉"?"ji":r.sancai.level==="半吉"?"banji":"xiong"}">${r.sancai.level}</span></h3><ul>`+r.sancai.notes.map(n=>`<li>${n}</li>`).join("")+`</ul>`;
   h+=`<h3>四、數理入盤（尾數→天干→四化）</h3>`+r.ziwei.map(z=>`<div class="zw"><b>${z.grid} ${z.num}</b> → 尾數 ${z.num%10} → <b>${z.tg}干</b>：<span class="lu">${z.祿}化祿</span> ${z.權}化權 ${z.科}化科 <span class="xiong">${z.忌}化忌</span><div class="sub">${z.label}</div>${z.warn.map(w=>`<div class="warn">${w}</div>`).join("")}${z.good.map(w=>`<div class="good">${w}</div>`).join("")}</div>`).join("");
