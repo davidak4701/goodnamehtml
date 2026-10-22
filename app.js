@@ -83,16 +83,17 @@ function reportText(r){
 // ---------- 起名 ----------
 function mulberry(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; let t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function shuffle(a,rnd){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(rnd()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
-function patterns(sur, nGiven, avoid, want, minSancai=2){
+function patterns(sur, nGiven, avoid, want, minSancai=2, {banji=false, ignoreAvoid=false}={}){ // banji：人格、總格容許半吉；ignoreAvoid：不避化忌（重忌扣分）
+  const main=banji?["吉","半吉"]:["吉"];
   const bad=new Set(avoid.flatMap(jiDigits)), good=new Set(want.flatMap(luDigits)); const out=[];
   const list = nGiven===1 ? Array.from({length:25},(_,i)=>[i+2]) : [].concat(...Array.from({length:25},(_,i)=>Array.from({length:25},(_,j)=>[i+2,j+2])));
   for(const g of list){
     const ge=calcWuge(sur,g);
-    if(shuli(ge.人格)[0]!=="吉"||shuli(ge.總格)[0]!=="吉") continue;
+    if(!main.includes(shuli(ge.人格)[0])||!main.includes(shuli(ge.總格)[0])) continue;
     if(!["吉","半吉"].includes(shuli(ge.地格)[0])||(nGiven>=2&&!["吉","半吉"].includes(shuli(ge.外格)[0]))) continue; // 單名外格固定為2
-    if(bad.has(ge.人格%10)||bad.has(ge.總格%10)) continue;
+    const hits=["人格","總格"].filter(k=>bad.has(ge[k]%10)).length; if(hits&&!ignoreAvoid) continue;
     const sc=sancai(ge.天格,ge.人格,ge.地格); if(sc.score<minSancai) continue;
-    let s=sc.score*2+jxScore(ge.地格)+jxScore(ge.外格);
+    let s=sc.score*2+jxScore(ge.地格)+jxScore(ge.外格)+jxScore(ge.人格)+jxScore(ge.總格)-4-hits*6;
     for(const k of ["人格","總格"]) if(good.has(ge[k]%10)) s+=4;
     out.push({s,g,ge});
   }
@@ -111,17 +112,23 @@ function charsByStroke(gender){
   return idx;
 }
 // 名字以繁體顯示；同一批每字只用一次（指定字除外）；雙名同筆畫組合最多2個；exclude＝換一批時已出過的名字；
-// 嚴格條件不夠數時，以放寬條件（三才半吉）補足並標 relaxed
-function suggest(surname, {n=10,nGiven=2,gender="N",avoid=[],want=[],preferWx=[],seed=1,fixed=null,fixedPos=0,exclude=[]}={}){
+// 嚴格條件不夠數時，以放寬條件（三才半吉）補足並標 relaxed（放寬原因字串）；
+// 仍然一個都冇時自動再放寬：先容許人格／總格半吉，再不避化忌，結果 auto 記下用咗邊一級
+function suggest(surname, {n=10,nGiven=2,gender="N",avoid=[],want=[],preferWx=[],seed=1,fixed=null,fixedPos=0,exclude=[],banji=false}={}){
   surname=surname.trim(); const sur=[];
   for(const c of surname){ const ci=charInfo(c,undefined,true); if(!ci.s) throw new Error(`找不到姓氏「${c}」的筆畫`); sur.push(ci.s); }
   const surT=[...surname].map(c=>{const t=charInfo(c,undefined,true).t; return TRAD_FIX[t]||t;}).join(""), fixedT=fixed?trad(fixed):null;
   const rnd=mulberry(seed); const idx=charsByStroke(gender);
-  const strict=patterns(sur,nGiven,avoid,want), sk=new Set(strict.map(p=>p.g.join("-")));
-  const relaxed=patterns(sur,nGiven,avoid,want,0).filter(p=>!sk.has(p.g.join("-")));
+  const sk=new Set(), fresh=ps=>ps.filter(p=>{const k=p.g.join("-"); if(sk.has(k)) return false; sk.add(k); return true;});
+  const strict=fresh(patterns(sur,nGiven,avoid,want,2,{banji}));
+  const tiers=[[false,()=>strict],["三才半吉",()=>fresh(patterns(sur,nGiven,avoid,want,0,{banji}))]];
+  if(!banji) tiers.push(["人格／總格半吉",()=>fresh(patterns(sur,nGiven,avoid,want,0,{banji:true}))]);
+  tiers.push(["未能避開化忌",()=>fresh(patterns(sur,nGiven,avoid,want,0,{banji:true,ignoreAvoid:true}))]);
+  let auto=null;
   const cap=nGiven>=2?2:n; const out=[]; const seen=new Set([...exclude].map(x=>[...x].map(trad).join(""))); const usedC=new Set(); const perPat={};
-  for(const [tier,pats] of [[false,strict],[true,relaxed]]){
-    if(out.length>=n) break;
+  for(const [ti,[tier,getPats]] of tiers.entries()){
+    if(out.length>=n || (ti>=2 && out.length)) break; // 第3級起只喺完全冇名字時先用
+    const pats=getPats(); if(ti>=2) auto=tier;
     const cands=[];
     for(const p of pats){
       const lists=p.g.map((s,pos)=>{
@@ -155,7 +162,7 @@ function suggest(surname, {n=10,nGiven=2,gender="N",avoid=[],want=[],preferWx=[]
       delete r._g; delete r._tc; out.push(r);
     }
   }
-  return {out, pats:strict};
+  return {out, pats:strict, auto};
 }
 function suggestNote(surname,nGiven,gender,avoid,want,got,n){
   if(got>=n) return "";
@@ -194,14 +201,15 @@ function doSuggest(newBatch){
   if(newBatch){ seed=Math.floor(Math.random()*1e6)+2; lastS.forEach(r=>hist.add(r.full)); } else hist=new Set();
   try{
     const nGiven=+document.querySelector("input[name=len]:checked").value;
-    const {out,pats}=suggest($("#s-sur").value,{n:+$("#s-n").value||10,nGiven,gender:document.querySelector("input[name=gender]:checked").value,
+    const banji=$("#s-banji").checked;
+    const {out,pats,auto}=suggest($("#s-sur").value,{n:+$("#s-n").value||10,nGiven,gender:document.querySelector("input[name=gender]:checked").value,
       avoid:getStars("avoid"),want:getStars("want"),preferWx:[...document.querySelectorAll("input[name=wx]:checked")].map(i=>i.value),
-      seed,fixed:[...$("#s-fixed").value.trim()][0]||null,fixedPos:nGiven===1?0:+document.querySelector("input[name=fixpos]:checked").value,exclude:hist});
+      banji,seed,fixed:[...$("#s-fixed").value.trim()][0]||null,fixedPos:nGiven===1?0:+document.querySelector("input[name=fixpos]:checked").value,exclude:hist});
     lastS=out;
     const nWant=+$("#s-n").value||10, nr=out.filter(r=>r.relaxed).length;
     const note=suggestNote($("#s-sur").value,nGiven,document.querySelector("input[name=gender]:checked").value,getStars("avoid"),getStars("want"),out.length,nWant);
-    $("#s-info").textContent=`符合「人格、總格皆吉＋三才吉＋避開化忌星」的筆畫組合共 ${pats.length} 組，已挑出 ${out.length} 個名字`+(nr?`（其中 ${nr} 個用放寬條件：三才半吉，已標示）`:"")+(hist.size?`；已排除之前出過的 ${hist.size} 個`:"")+`。${note} 點名字看完整分析。`;
-    $("#s-list").innerHTML=out.length?`<table class="tbl"><tr><th>名字</th><th>拼音</th><th>筆畫</th><th>人格</th><th>總格</th><th>三才</th><th>化忌</th><th>分數</th><th>寓意</th></tr>`+out.map((r,i)=>{const g=r.grids;return `<tr class="pick" data-i="${i}"><td><b>${r.full}</b></td><td>${r.chars.map(c=>c.py).join(" ")}</td><td>${r.chars.map(c=>c.s).join("-")}</td><td class="${jxCls(g.人格.jx)}">${g.人格.num}${g.人格.jx}</td><td class="${jxCls(g.總格.jx)}">${g.總格.num}${g.總格.jx}</td><td>${r.sancai.wx} ${r.sancai.level}${r.relaxed?'<span class="banji">（放寬）</span>':""}</td><td>${g.人格.sihua.忌}/${g.總格.sihua.忌}</td><td><b>${r.score}</b></td><td class="l">${r.meaning}</td></tr>`;}).join("")+`</table>`:`<p>${esc(note||"目前條件下找不到合適名字。")} 可改雙名、放寬性別、取消指定字或少勾一些化忌星。</p>`;
+    $("#s-info").textContent=(auto&&out.length?`⚠ 原本條件下找不到任何名字，已自動放寬（${auto==="未能避開化忌"?"人格／總格半吉＋未能避開化忌":auto}）提供名字，評分可能較低，已標示。`:"")+`符合「人格、總格${banji?"吉或半吉":"皆吉"}＋三才吉＋避開化忌星」的筆畫組合共 ${pats.length} 組，已挑出 ${out.length} 個名字`+(nr?`（其中 ${nr} 個用放寬條件，已標示）`:"")+(hist.size?`；已排除之前出過的 ${hist.size} 個`:"")+`。${note} 點名字看完整分析。`;
+    $("#s-list").innerHTML=out.length?`<table class="tbl"><tr><th>名字</th><th>拼音</th><th>筆畫</th><th>人格</th><th>總格</th><th>三才</th><th>化忌</th><th>分數</th><th>寓意</th></tr>`+out.map((r,i)=>{const g=r.grids;return `<tr class="pick" data-i="${i}"><td><b>${r.full}</b></td><td>${r.chars.map(c=>c.py).join(" ")}</td><td>${r.chars.map(c=>c.s).join("-")}</td><td class="${jxCls(g.人格.jx)}">${g.人格.num}${g.人格.jx}</td><td class="${jxCls(g.總格.jx)}">${g.總格.num}${g.總格.jx}</td><td>${r.sancai.wx} ${r.sancai.level}${r.relaxed?`<span class="banji">（放寬：${r.relaxed}）</span>`:""}</td><td>${g.人格.sihua.忌}/${g.總格.sihua.忌}</td><td><b>${r.score}</b></td><td class="l">${r.meaning}</td></tr>`;}).join("")+`</table>`:`<p>${esc(note||"目前條件下找不到合適名字。")} 可改雙名、放寬性別、取消指定字或少勾一些化忌星。</p>`;
     document.querySelectorAll("tr.pick").forEach(tr=>tr.onclick=()=>{ document.querySelectorAll("tr.pick").forEach(x=>x.classList.remove("sel")); tr.classList.add("sel"); $("#s-out").innerHTML=reportHTML(lastS[+tr.dataset.i]); });
     if(out.length){ document.querySelector("tr.pick").click(); }
   }catch(e){ $("#s-list").innerHTML=`<p class="xiong">${esc(e.message)}</p>`; }
